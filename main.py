@@ -12,7 +12,6 @@ TOTAL_GOODS_IDS = 28762
 BATCH_SIZE = 400 
 RATE_LIMIT_DELAY = 1  
 
-
 async def fetch_skin_data(session, goods_id):
     """Asynchronously fetches data for a single goods_id."""
     url = f"{API_URL}{goods_id}"
@@ -23,7 +22,7 @@ async def fetch_skin_data(session, goods_id):
                 if 'data' in data and 'name' in data['data'] and 'id' in data['data']:
                     return data
                 else:
-                    logging.warning(f"Response for goods_id {goods_id} does not contain 'data' key.")
+                    logging.warning(f"Data incomplete for goods_id {goods_id}: {data}")
                     return None
             else:
                 logging.warning(f"Failed to retrieve data for goods_id {goods_id}, status: {response.status}")
@@ -36,7 +35,9 @@ async def fetch_skin_data(session, goods_id):
 async def fetch_batch(session, batch):
     """Fetches a batch of goods_id data."""
     tasks = [fetch_skin_data(session, goods_id) for goods_id in batch]
-    return await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks)
+    await asyncio.sleep(RATE_LIMIT_DELAY) 
+    return results
 
 
 def remove_unicode_sequences(text):
@@ -51,19 +52,19 @@ async def main():
     async with aiohttp.ClientSession() as session:
         name_to_goods_id = {}
         all_skin_responses = []
-        for i in range(1, TOTAL_GOODS_IDS, BATCH_SIZE):
-            batch = range(i, min(i + BATCH_SIZE, TOTAL_GOODS_IDS))
+        num_batches = ceil(TOTAL_GOODS_IDS / BATCH_SIZE)
+
+        for i in range(0, TOTAL_GOODS_IDS, BATCH_SIZE):
+            batch = range(i+1, min(i+1 + BATCH_SIZE, TOTAL_GOODS_IDS+1))
             responses = await fetch_batch(session, batch)
             for resp in responses:
-                if resp is not None:
+                if resp:
                     skin_name = remove_unicode_sequences(resp["data"]["name"])
                     goods_id = resp["data"]["id"]
                     name_to_goods_id[skin_name] = goods_id
                     all_skin_responses.append(resp)
-            logging.info(f"Completed batch {i // BATCH_SIZE + 1}/{ceil(TOTAL_GOODS_IDS / BATCH_SIZE)}")
+            logging.info(f"Completed batch {(i // BATCH_SIZE) + 1}/{num_batches}")
             
-            await asyncio.sleep(RATE_LIMIT_DELAY)
-
         with open("name_to_goods_id.json", "w") as mapping_file:
             json.dump(name_to_goods_id, mapping_file, indent=2)
 
@@ -71,5 +72,5 @@ async def main():
             json.dump(all_skin_responses, responses_file, indent=2)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())
